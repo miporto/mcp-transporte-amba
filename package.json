@@ -1,0 +1,29 @@
+{
+  "name": "mcp-transporte-amba",
+  "version": "0.1.0",
+  "description": "MCP server for Buenos Aires Metropolitan Area transit information",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "lint": "bunx oxlint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "hono": "^4.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxlint": "^0.16.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
