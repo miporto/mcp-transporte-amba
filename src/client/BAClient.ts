@@ -77,7 +77,28 @@ export class BAClient {
             );
         }
 
-        return response.json() as Promise<T>;
+        // Validate content-type is JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType?.startsWith("application/json")) {
+            const text = await response.text();
+            throw new Error(
+                `API returned non-JSON response (${contentType}): ${text.slice(0, 200)}`
+            );
+        }
+
+        let data: unknown;
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error("Failed to parse JSON response from API");
+        }
+
+        // Check for API error responses
+        if (data && typeof data === "object" && "error" in data) {
+            throw new Error(`API error: ${String((data as { error: unknown }).error)}`);
+        }
+
+        return data as T;
     }
 
     /**
@@ -164,7 +185,7 @@ export class BAClient {
         const arrivals: Arrival[] = [];
         const now = Date.now();
 
-        for (const entity of data.entity) {
+        for (const entity of data.entity ?? []) {
             if (!entity.tripUpdate?.stopTimeUpdate) continue;
 
             const routeId = entity.tripUpdate.trip.routeId;
@@ -223,7 +244,7 @@ export class BAClient {
         const arrivals: Arrival[] = [];
         const now = Date.now();
 
-        for (const entity of data.entity) {
+        for (const entity of data.entity ?? []) {
             if (!entity.tripUpdate?.stopTimeUpdate) continue;
 
             const routeId = entity.tripUpdate.trip.routeId;
@@ -294,7 +315,7 @@ export class BAClient {
         }
 
         // Parse alerts
-        for (const entity of data.entity) {
+        for (const entity of data.entity ?? []) {
             if (!entity.alert) continue;
 
             const routeIds = entity.alert.informedEntity
@@ -359,7 +380,7 @@ export class BAClient {
         }
 
         // Parse alerts (similar to subte)
-        for (const entity of data.entity) {
+        for (const entity of data.entity ?? []) {
             if (!entity.alert) continue;
 
             const routeIds = entity.alert.informedEntity

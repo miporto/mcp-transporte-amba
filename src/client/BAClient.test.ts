@@ -2,7 +2,7 @@
  * Unit tests for BAClient
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BAClient } from "./BAClient.js";
 import type {
     GCBASubteForecastResponse,
@@ -12,17 +12,38 @@ import type {
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const originalFetch = globalThis.fetch;
+
+/**
+ * Helper to create mock Response objects with proper headers
+ */
+function mockJsonResponse<T>(data: T, ok = true, status = 200, statusText = "OK") {
+    return {
+        ok,
+        status,
+        statusText,
+        headers: {
+            get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+        },
+        json: () => Promise.resolve(data),
+    };
+}
 
 describe("BAClient", () => {
     let client: BAClient;
 
     beforeEach(() => {
         vi.clearAllMocks();
+        // @ts-expect-error - mocking global fetch
+        globalThis.fetch = mockFetch;
         client = new BAClient({
             clientId: "test_client_id",
             clientSecret: "test_client_secret",
         });
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
     });
 
     describe("getArrivals", () => {
@@ -60,14 +81,8 @@ describe("BAClient", () => {
             };
 
             mockFetch
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockSubteResponse),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockTrainResponse),
-                });
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
 
             const arrivals = await client.getArrivals({ station: "Plaza" });
 
@@ -127,10 +142,7 @@ describe("BAClient", () => {
                 ],
             };
 
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve(mockSubteResponse),
-            });
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
             const arrivals = await client.getArrivals({
                 station: "Test",
@@ -168,14 +180,8 @@ describe("BAClient", () => {
             const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
 
             mockFetch
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockSubteResponse),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockTrainResponse),
-                });
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
 
             const arrivals = await client.getArrivals({
                 station: "Test",
@@ -190,6 +196,9 @@ describe("BAClient", () => {
                 ok: false,
                 status: 401,
                 statusText: "Unauthorized",
+                headers: {
+                    get: () => null,
+                },
             });
 
             await expect(client.getArrivals({ station: "Test" })).rejects.toThrow(
@@ -224,14 +233,8 @@ describe("BAClient", () => {
             const mockTrainAlerts: GCBAServiceAlertsResponse = { entity: [] };
 
             mockFetch
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockSubteAlerts),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve(mockTrainAlerts),
-                });
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteAlerts))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainAlerts));
 
             const statuses = await client.getStatus({});
 
@@ -247,10 +250,7 @@ describe("BAClient", () => {
         it("should filter by type", async () => {
             const mockSubteAlerts: GCBAServiceAlertsResponse = { entity: [] };
 
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                json: () => Promise.resolve(mockSubteAlerts),
-            });
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteAlerts));
 
             const statuses = await client.getStatus({ type: "subte" });
 
@@ -263,14 +263,8 @@ describe("BAClient", () => {
     describe("authentication", () => {
         it("should include client_id and client_secret in requests", async () => {
             mockFetch
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve({ entity: [] }),
-                })
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () => Promise.resolve({ entity: [] }),
-                });
+                .mockResolvedValueOnce(mockJsonResponse({ entity: [] }))
+                .mockResolvedValueOnce(mockJsonResponse({ entity: [] }));
 
             await client.getArrivals({ station: "test" });
 
