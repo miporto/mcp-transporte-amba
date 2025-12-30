@@ -112,8 +112,9 @@ export const TOOLS = {
     get_subte_arrivals: {
         name: "get_subte_arrivals",
         description:
-            "Get real-time arrival predictions for Buenos Aires Subte (Metro) stations. " +
-            "Returns upcoming subte arrivals with estimated times and any delays. " +
+            "Get real-time arrival predictions for Buenos Aires Subte (subway/metro) stations. " +
+            "The tool validates station names and line combinations, auto-correcting common mistakes " +
+            "(e.g., wrong line for a station) and returning warnings if the input is ambiguous or invalid. " +
             "Covers Lines A, B, C, D, E, H, and Premetro.",
         inputSchema: GetSubteArrivalsSchema,
     },

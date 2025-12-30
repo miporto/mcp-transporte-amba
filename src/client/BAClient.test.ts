@@ -29,6 +29,51 @@ function mockJsonResponse<T>(data: T, ok = true, status = 200, statusText = "OK"
     };
 }
 
+/**
+ * Helper to create a mock subte response entity
+ */
+function createMockSubteEntity(
+    tripId: string,
+    routeId: string,
+    directionId: number,
+    stations: Array<{ stopId: string; stopName: string; arrivalTime: number; delay?: number }>
+): GCBASubteForecastResponse["Entity"][0] {
+    return {
+        ID: `${routeId}_${tripId}`,
+        Linea: {
+            Trip_Id: tripId,
+            Route_Id: routeId,
+            Direction_ID: directionId,
+            start_time: "10:00:00",
+            start_date: "20251230",
+            Estaciones: stations.map((s) => ({
+                stop_id: s.stopId,
+                stop_name: s.stopName,
+                arrival: {
+                    time: s.arrivalTime,
+                    delay: s.delay ?? 0,
+                },
+                departure: {
+                    time: s.arrivalTime + 24,
+                    delay: s.delay ?? 0,
+                },
+            })),
+        },
+    };
+}
+
+/**
+ * Helper to create a mock subte forecast response
+ */
+function createMockSubteForecast(
+    entities: GCBASubteForecastResponse["Entity"]
+): GCBASubteForecastResponse {
+    return {
+        Header: { timestamp: Math.floor(Date.now() / 1000) },
+        Entity: entities,
+    };
+}
+
 describe("BAClient", () => {
     let client: BAClient;
 
@@ -51,30 +96,11 @@ describe("BAClient", () => {
             const now = Date.now();
             const futureTime = Math.floor((now + 5 * 60 * 1000) / 1000); // 5 minutes from now
 
-            const mockSubteResponse: GCBASubteForecastResponse = {
-                entity: [
-                    {
-                        id: "1",
-                        tripUpdate: {
-                            trip: {
-                                tripId: "trip-001",
-                                routeId: "LineaA",
-                                directionId: 0,
-                            },
-                            stopTimeUpdate: [
-                                {
-                                    stopSequence: 1,
-                                    stopId: "Plaza_de_Mayo",
-                                    arrival: {
-                                        delay: 0,
-                                        time: futureTime,
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                ],
-            };
+            const mockSubteResponse = createMockSubteForecast([
+                createMockSubteEntity("A11", "LineaA", 0, [
+                    { stopId: "1076N", stopName: "Plaza de Mayo", arrivalTime: futureTime, delay: 0 },
+                ]),
+            ]);
 
             const mockTrainResponse: GCBATrainTripUpdateResponse = {
                 entity: [],
@@ -89,12 +115,13 @@ describe("BAClient", () => {
             expect(arrivals).toHaveLength(1);
             expect(arrivals[0]).toMatchObject({
                 station: {
-                    id: "Plaza_de_Mayo",
+                    id: "1076N",
+                    name: "Plaza de Mayo",
                     line: "A",
                     type: "subte",
                 },
                 destination: "Plaza de Mayo",
-                tripId: "trip-001",
+                tripId: "A11",
             });
             expect(arrivals[0]?.minutesAway).toBeGreaterThan(0);
         });
@@ -103,44 +130,14 @@ describe("BAClient", () => {
             const now = Date.now();
             const futureTime = Math.floor((now + 5 * 60 * 1000) / 1000);
 
-            const mockSubteResponse: GCBASubteForecastResponse = {
-                entity: [
-                    {
-                        id: "1",
-                        tripUpdate: {
-                            trip: {
-                                tripId: "trip-001",
-                                routeId: "LineaA",
-                                directionId: 0,
-                            },
-                            stopTimeUpdate: [
-                                {
-                                    stopSequence: 1,
-                                    stopId: "Test_Station",
-                                    arrival: { time: futureTime },
-                                },
-                            ],
-                        },
-                    },
-                    {
-                        id: "2",
-                        tripUpdate: {
-                            trip: {
-                                tripId: "trip-002",
-                                routeId: "LineaB",
-                                directionId: 0,
-                            },
-                            stopTimeUpdate: [
-                                {
-                                    stopSequence: 1,
-                                    stopId: "Test_Station",
-                                    arrival: { time: futureTime },
-                                },
-                            ],
-                        },
-                    },
-                ],
-            };
+            const mockSubteResponse = createMockSubteForecast([
+                createMockSubteEntity("A11", "LineaA", 0, [
+                    { stopId: "1001", stopName: "Test Station", arrivalTime: futureTime },
+                ]),
+                createMockSubteEntity("B22", "LineaB", 0, [
+                    { stopId: "2001", stopName: "Test Station", arrivalTime: futureTime },
+                ]),
+            ]);
 
             mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
@@ -155,27 +152,18 @@ describe("BAClient", () => {
 
         it("should respect limit parameter", async () => {
             const now = Date.now();
-            const mockSubteResponse: GCBASubteForecastResponse = {
-                entity: Array.from({ length: 10 }, (_, i) => ({
-                    id: `${i}`,
-                    tripUpdate: {
-                        trip: {
-                            tripId: `trip-${i}`,
-                            routeId: "LineaA",
-                            directionId: 0,
+
+            const mockSubteResponse = createMockSubteForecast(
+                Array.from({ length: 10 }, (_, i) =>
+                    createMockSubteEntity(`A${i}`, "LineaA", 0, [
+                        {
+                            stopId: `100${i}`,
+                            stopName: "Test Station",
+                            arrivalTime: Math.floor((now + (i + 1) * 60 * 1000) / 1000),
                         },
-                        stopTimeUpdate: [
-                            {
-                                stopSequence: 1,
-                                stopId: "Test_Station",
-                                arrival: {
-                                    time: Math.floor((now + (i + 1) * 60 * 1000) / 1000),
-                                },
-                            },
-                        ],
-                    },
-                })),
-            };
+                    ])
+                )
+            );
 
             const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
 
@@ -204,6 +192,72 @@ describe("BAClient", () => {
             await expect(client.getArrivals({ station: "Test" })).rejects.toThrow(
                 "API request failed: 401 Unauthorized"
             );
+        });
+
+        it("should match station names with spaces correctly", async () => {
+            const now = Date.now();
+            const futureTime = Math.floor((now + 5 * 60 * 1000) / 1000);
+
+            const mockSubteResponse = createMockSubteForecast([
+                createMockSubteEntity("A11", "LineaA", 0, [
+                    { stopId: "1076N", stopName: "Plaza de Mayo", arrivalTime: futureTime },
+                ]),
+            ]);
+
+            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+
+            mockFetch
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+
+            const arrivals = await client.getArrivals({ station: "Plaza de Mayo" });
+
+            expect(arrivals).toHaveLength(1);
+            expect(arrivals[0]?.station.name).toBe("Plaza de Mayo");
+        });
+
+        it("should match station names with accents when query omits them", async () => {
+            const now = Date.now();
+            const futureTime = Math.floor((now + 5 * 60 * 1000) / 1000);
+
+            const mockSubteResponse = createMockSubteForecast([
+                createMockSubteEntity("A11", "LineaA", 0, [
+                    { stopId: "1072N", stopName: "Sáenz Peña", arrivalTime: futureTime },
+                ]),
+            ]);
+
+            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+
+            mockFetch
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+
+            const arrivals = await client.getArrivals({ station: "Saenz Pena" });
+
+            expect(arrivals).toHaveLength(1);
+            expect(arrivals[0]?.station.name).toBe("Sáenz Peña");
+        });
+
+        it("should include delay information", async () => {
+            const now = Date.now();
+            const futureTime = Math.floor((now + 5 * 60 * 1000) / 1000);
+
+            const mockSubteResponse = createMockSubteForecast([
+                createMockSubteEntity("A11", "LineaA", 0, [
+                    { stopId: "1076N", stopName: "Plaza de Mayo", arrivalTime: futureTime, delay: 120 },
+                ]),
+            ]);
+
+            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+
+            mockFetch
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+
+            const arrivals = await client.getArrivals({ station: "Plaza de Mayo" });
+
+            expect(arrivals).toHaveLength(1);
+            expect(arrivals[0]?.delaySeconds).toBe(120);
         });
     });
 
@@ -262,9 +316,12 @@ describe("BAClient", () => {
 
     describe("authentication", () => {
         it("should include client_id and client_secret in requests", async () => {
+            const mockSubteResponse = createMockSubteForecast([]);
+            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+
             mockFetch
-                .mockResolvedValueOnce(mockJsonResponse({ entity: [] }))
-                .mockResolvedValueOnce(mockJsonResponse({ entity: [] }));
+                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
+                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
 
             await client.getArrivals({ station: "test" });
 

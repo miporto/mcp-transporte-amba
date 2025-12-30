@@ -74,25 +74,27 @@ export interface LineStatus {
 
 /** GCBA API response for subte forecast */
 export interface GCBASubteForecastResponse {
-    /** GTFS-RT TripUpdate entities */
-    entity: Array<{
-        id: string;
-        tripUpdate?: {
-            trip: {
-                tripId: string;
-                routeId: string;
-                directionId: number;
-            };
-            stopTimeUpdate?: Array<{
-                stopSequence: number;
-                stopId: string;
-                arrival?: {
-                    delay?: number;
-                    time?: number;
+    Header: {
+        timestamp: number;
+    };
+    Entity: Array<{
+        ID: string;
+        Linea: {
+            Trip_Id: string;
+            Route_Id: string;
+            Direction_ID: number;
+            start_time: string;
+            start_date: string;
+            Estaciones: Array<{
+                stop_id: string;
+                stop_name: string;
+                arrival: {
+                    time: number;
+                    delay: number;
                 };
-                departure?: {
-                    delay?: number;
-                    time?: number;
+                departure: {
+                    time: number;
+                    delay: number;
                 };
             }>;
         };

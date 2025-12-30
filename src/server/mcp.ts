@@ -6,6 +6,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { BAClient } from "../client/BAClient.js";
+import { resolveSubteStation } from "../client/subteResolver.js";
 import {
     TOOLS,
     GetSubteArrivalsSchema,
@@ -80,18 +81,44 @@ export function createMcpServer(client: BAClient): McpServer {
         async (params: GetSubteArrivalsInput) => {
             const validated = GetSubteArrivalsSchema.parse(params);
 
+            // Resolve and validate station/line combination
+            const { station: resolvedStation, issues } = resolveSubteStation(
+                validated.station,
+                validated.line
+            );
+
+            // If station couldn't be resolved, return the issues
+            if (!resolvedStation) {
+                return {
+                    content: [
+                        {
+                            type: "text" as const,
+                            text: issues.join("\n"),
+                        },
+                    ],
+                };
+            }
+
+            // Use the resolved station name and line
             const arrivals = await client.getArrivals({
-                station: validated.station,
-                line: validated.line,
+                station: resolvedStation.name,
+                line: resolvedStation.line,
                 direction: validated.direction,
                 limit: validated.limit,
             });
+
+            // Build response with any correction warnings
+            let responseText = "";
+            if (issues.length > 0) {
+                responseText += `⚠️ ${issues.join("\n")}\n\n`;
+            }
+            responseText += formatArrivals(arrivals);
 
             return {
                 content: [
                     {
                         type: "text" as const,
-                        text: formatArrivals(arrivals),
+                        text: responseText,
                     },
                 ],
             };

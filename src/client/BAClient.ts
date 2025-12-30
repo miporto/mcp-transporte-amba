@@ -16,6 +16,7 @@ import type {
     LineStatus,
     TransitLine,
 } from "./types.js";
+import { normalizeStationString } from "./stringUtils.js";
 
 const DEFAULT_BASE_URL = "https://apitransporte.buenosaires.gob.ar";
 
@@ -185,48 +186,49 @@ export class BAClient {
         const arrivals: Arrival[] = [];
         const now = Date.now();
 
-        for (const entity of data.entity ?? []) {
-            if (!entity.tripUpdate?.stopTimeUpdate) continue;
+        for (const entity of data.Entity ?? []) {
+            if (!entity.Linea?.Estaciones) continue;
 
-            const routeId = entity.tripUpdate.trip.routeId;
+            const routeId = entity.Linea.Route_Id;
             const line = SUBTE_ROUTE_MAP[routeId];
             if (!line) continue;
 
             // Filter by line if specified
             if (params.line && line !== params.line) continue;
 
-            for (const stopUpdate of entity.tripUpdate.stopTimeUpdate) {
-                const stopId = stopUpdate.stopId;
+            for (const estacion of entity.Linea.Estaciones) {
+                const stopName = estacion.stop_name;
+                const normalizedStopName = normalizeStationString(stopName);
+                const normalizedQuery = normalizeStationString(params.station);
 
-                // Filter by station (case-insensitive partial match)
-                if (!stopId.toLowerCase().includes(params.station.toLowerCase())) {
+                if (!normalizedStopName.includes(normalizedQuery)) {
                     continue;
                 }
 
-                const arrivalTime = stopUpdate.arrival?.time
-                    ? new Date(stopUpdate.arrival.time * 1000)
+                const arrivalTime = estacion.arrival?.time
+                    ? new Date(estacion.arrival.time * 1000)
                     : null;
 
                 if (!arrivalTime || arrivalTime.getTime() < now) continue;
 
-                const delaySeconds = stopUpdate.arrival?.delay ?? 0;
+                const delaySeconds = estacion.arrival?.delay ?? 0;
                 const minutesAway = Math.round((arrivalTime.getTime() - now) / 60000);
 
                 arrivals.push({
                     station: {
-                        id: stopId,
-                        name: stopId, // Would need station name lookup
+                        id: estacion.stop_id,
+                        name: stopName,
                         line,
                         type: "subte",
                     },
                     destination: this.getDirectionName(
-                        entity.tripUpdate.trip.directionId,
+                        entity.Linea.Direction_ID,
                         line
                     ),
                     arrivalTime: arrivalTime.toISOString(),
                     delaySeconds,
                     minutesAway,
-                    tripId: entity.tripUpdate.trip.tripId,
+                    tripId: entity.Linea.Trip_Id,
                 });
             }
         }
@@ -256,9 +258,10 @@ export class BAClient {
 
             for (const stopUpdate of entity.tripUpdate.stopTimeUpdate) {
                 const stopId = stopUpdate.stopId;
+                const normalizedStopId = normalizeStationString(stopId);
+                const normalizedQuery = normalizeStationString(params.station);
 
-                // Filter by station
-                if (!stopId.toLowerCase().includes(params.station.toLowerCase())) {
+                if (!normalizedStopId.includes(normalizedQuery)) {
                     continue;
                 }
 
@@ -462,6 +465,7 @@ export class BAClient {
             "Belgrano Norte",
         ].includes(line);
     }
+
 }
 
 /**
