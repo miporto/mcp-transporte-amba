@@ -1,0 +1,26 @@
+# Cloudflare Workers configuration for MCP Transporte AMBA
+# Documentation: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "mcp-transporte-amba"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# Use Node.js compatibility for MCP SDK
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables (secrets should be set via `wrangler secret put`)
+# BA_CLIENT_ID and BA_CLIENT_SECRET must be set as secrets:
+#   wrangler secret put BA_CLIENT_ID
+#   wrangler secret put BA_CLIENT_SECRET
+
+[vars]
+TRANSPORT = "http"
+
+# Production environment (optional overrides)
+[env.production]
+name = "mcp-transporte-amba"
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"
