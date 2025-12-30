@@ -165,14 +165,14 @@ export class BAClient {
      * Fetch subte service alerts
      */
     private async fetchSubteAlerts(): Promise<GCBAServiceAlertsResponse> {
-        return this.fetch<GCBAServiceAlertsResponse>("/subtes/serviceAlerts");
+        return this.fetch<GCBAServiceAlertsResponse>("/subtes/serviceAlerts?json=1");
     }
 
     /**
      * Fetch train service alerts
      */
     private async fetchTrainAlerts(): Promise<GCBAServiceAlertsResponse> {
-        return this.fetch<GCBAServiceAlertsResponse>("/trenes/serviceAlerts");
+        return this.fetch<GCBAServiceAlertsResponse>("/trenes/serviceAlerts?json=1");
     }
 
     /**
@@ -318,8 +318,8 @@ export class BAClient {
         for (const entity of data.entity ?? []) {
             if (!entity.alert) continue;
 
-            const routeIds = entity.alert.informedEntity
-                ?.map((e) => e.routeId)
+            const routeIds = entity.alert.informed_entity
+                ?.map((e) => e.route_id)
                 .filter(Boolean) ?? [];
 
             for (const routeId of routeIds) {
@@ -331,10 +331,10 @@ export class BAClient {
                 if (!status) continue;
 
                 const title =
-                    entity.alert.headerText?.translation.find((t) => t.language === "es")
+                    entity.alert.header_text?.translation.find((t) => t.language === "es")
                         ?.text ?? "Alerta de servicio";
                 const description =
-                    entity.alert.descriptionText?.translation.find(
+                    entity.alert.description_text?.translation.find(
                         (t) => t.language === "es"
                     )?.text ?? "";
 
@@ -383,8 +383,8 @@ export class BAClient {
         for (const entity of data.entity ?? []) {
             if (!entity.alert) continue;
 
-            const routeIds = entity.alert.informedEntity
-                ?.map((e) => e.routeId)
+            const routeIds = entity.alert.informed_entity
+                ?.map((e) => e.route_id)
                 .filter(Boolean) ?? [];
 
             for (const routeId of routeIds) {
@@ -396,10 +396,10 @@ export class BAClient {
                 if (!status) continue;
 
                 const title =
-                    entity.alert.headerText?.translation.find((t) => t.language === "es")
+                    entity.alert.header_text?.translation.find((t) => t.language === "es")
                         ?.text ?? "Alerta de servicio";
                 const description =
-                    entity.alert.descriptionText?.translation.find(
+                    entity.alert.description_text?.translation.find(
                         (t) => t.language === "es"
                     )?.text ?? "";
 

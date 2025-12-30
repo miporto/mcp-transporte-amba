@@ -214,13 +214,13 @@ describe("BAClient", () => {
                     {
                         id: "alert-1",
                         alert: {
-                            informedEntity: [{ routeId: "LineaA" }],
-                            headerText: {
+                            informed_entity: [{ route_id: "LineaA" }],
+                            header_text: {
                                 translation: [
                                     { text: "Servicio limitado", language: "es" },
                                 ],
                             },
-                            descriptionText: {
+                            description_text: {
                                 translation: [
                                     { text: "Por obras en la estación", language: "es" },
                                 ],

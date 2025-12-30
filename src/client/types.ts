@@ -125,26 +125,26 @@ export interface GCBATrainTripUpdateResponse {
     }>;
 }
 
-/** GCBA API response for service alerts */
+/** GCBA API response for service alerts (GTFS-RT uses snake_case) */
 export interface GCBAServiceAlertsResponse {
     entity: Array<{
         id: string;
         alert?: {
-            activePeriod?: Array<{
+            active_period?: Array<{
                 start?: number;
                 end?: number;
             }>;
-            informedEntity?: Array<{
-                routeId?: string;
-                stopId?: string;
+            informed_entity?: Array<{
+                route_id?: string;
+                stop_id?: string;
             }>;
-            headerText?: {
+            header_text?: {
                 translation: Array<{
                     text: string;
                     language: string;
                 }>;
             };
-            descriptionText?: {
+            description_text?: {
                 translation: Array<{
                     text: string;
                     language: string;
