@@ -1,7 +1,7 @@
 # Cloudflare Workers configuration for MCP Transporte AMBA
 # Documentation: https://developers.cloudflare.com/workers/wrangler/configuration/
 
-name = "mcp-transporte-amba"
+name = "mcp-transporte-amba-dev"
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 
@@ -16,11 +16,14 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 TRANSPORT = "http"
 
-# Production environment (optional overrides)
-[env.production]
-name = "mcp-transporte-amba"
-
-# Development settings
+# Local development settings
 [dev]
 port = 8787
 local_protocol = "http"
+
+# Production environment
+[env.production]
+name = "mcp-transporte-amba"
+
+[env.production.vars]
+TRANSPORT = "http"
