@@ -6,8 +6,19 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { BAClient } from "../client/BAClient.js";
-import { TOOLS, GetArrivalsSchema, GetStatusSchema } from "./tools.js";
-import type { GetArrivalsInput, GetStatusInput } from "./tools.js";
+import {
+    TOOLS,
+    GetSubteArrivalsSchema,
+    GetTrainArrivalsSchema,
+    GetSubteStatusSchema,
+    GetTrainStatusSchema,
+} from "./tools.js";
+import type {
+    GetSubteArrivalsInput,
+    GetTrainArrivalsInput,
+    GetSubteStatusInput,
+    GetTrainStatusInput,
+} from "./tools.js";
 import type { Arrival, LineStatus } from "../client/types.js";
 
 /**
@@ -39,7 +50,7 @@ function formatStatus(statuses: LineStatus[]): string {
         const alertCount = s.alerts.length;
         const alertText = alertCount > 0 ? ` (${alertCount} alert${alertCount > 1 ? "s" : ""})` : "";
 
-        let result = `• ${s.line} (${s.type}): ${status}${alertText}`;
+        let result = `• ${s.line}: ${status}${alertText}`;
 
         if (s.alerts.length > 0) {
             const alertDetails = s.alerts.map((a) => `  - ${a.title}: ${a.description}`);
@@ -61,13 +72,13 @@ export function createMcpServer(client: BAClient): McpServer {
         version: "0.1.0",
     });
 
-    // Register get_arrivals tool
+    // Register get_subte_arrivals tool
     server.tool(
-        TOOLS.get_arrivals.name,
-        TOOLS.get_arrivals.description,
-        TOOLS.get_arrivals.inputSchema.shape,
-        async (params: GetArrivalsInput) => {
-            const validated = GetArrivalsSchema.parse(params);
+        TOOLS.get_subte_arrivals.name,
+        TOOLS.get_subte_arrivals.description,
+        TOOLS.get_subte_arrivals.inputSchema.shape,
+        async (params: GetSubteArrivalsInput) => {
+            const validated = GetSubteArrivalsSchema.parse(params);
 
             const arrivals = await client.getArrivals({
                 station: validated.station,
@@ -87,17 +98,67 @@ export function createMcpServer(client: BAClient): McpServer {
         }
     );
 
-    // Register get_status tool
+    // Register get_train_arrivals tool
     server.tool(
-        TOOLS.get_status.name,
-        TOOLS.get_status.description,
-        TOOLS.get_status.inputSchema.shape,
-        async (params: GetStatusInput) => {
-            const validated = GetStatusSchema.parse(params);
+        TOOLS.get_train_arrivals.name,
+        TOOLS.get_train_arrivals.description,
+        TOOLS.get_train_arrivals.inputSchema.shape,
+        async (params: GetTrainArrivalsInput) => {
+            const validated = GetTrainArrivalsSchema.parse(params);
+
+            const arrivals = await client.getArrivals({
+                station: validated.station,
+                line: validated.line,
+                direction: validated.direction,
+                limit: validated.limit,
+            });
+
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: formatArrivals(arrivals),
+                    },
+                ],
+            };
+        }
+    );
+
+    // Register get_subte_status tool
+    server.tool(
+        TOOLS.get_subte_status.name,
+        TOOLS.get_subte_status.description,
+        TOOLS.get_subte_status.inputSchema.shape,
+        async (params: GetSubteStatusInput) => {
+            const validated = GetSubteStatusSchema.parse(params);
 
             const statuses = await client.getStatus({
                 line: validated.line,
-                type: validated.type,
+                type: "subte",
+            });
+
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: formatStatus(statuses),
+                    },
+                ],
+            };
+        }
+    );
+
+    // Register get_train_status tool
+    server.tool(
+        TOOLS.get_train_status.name,
+        TOOLS.get_train_status.description,
+        TOOLS.get_train_status.inputSchema.shape,
+        async (params: GetTrainStatusInput) => {
+            const validated = GetTrainStatusSchema.parse(params);
+
+            const statuses = await client.getStatus({
+                line: validated.line,
+                type: "train",
             });
 
             return {

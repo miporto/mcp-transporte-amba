@@ -1,7 +1,7 @@
 /**
  * MCP Tool definitions for BA-Transit
  *
- * Defines the get_arrivals and get_status tools with Zod schemas
+ * Defines separate tools for subte and train arrivals/status
  */
 
 import { z } from "zod";
@@ -27,29 +27,23 @@ export const TrainLineSchema = z.enum([
     "Belgrano Norte",
 ]);
 
-/** All transit lines */
-export const TransitLineSchema = z.union([SubteLineSchema, TrainLineSchema]);
-
-/** Transit type */
-export const TransitTypeSchema = z.enum(["subte", "train"]);
-
 /**
- * Schema for get_arrivals tool parameters
+ * Schema for get_subte_arrivals tool parameters
  */
-export const GetArrivalsSchema = z.object({
+export const GetSubteArrivalsSchema = z.object({
     station: z
         .string()
         .min(1)
         .describe(
-            "Station name or partial name to search for (e.g., 'Retiro', 'Plaza de Mayo')"
+            "Station name or partial name to search for (e.g., 'Plaza de Mayo', 'Catedral')"
         ),
-    line: TransitLineSchema.optional().describe(
-        "Specific transit line to filter by (e.g., 'A', 'Mitre')"
+    line: SubteLineSchema.optional().describe(
+        "Specific subte line to filter by (A, B, C, D, E, H, or Premetro)"
     ),
     direction: z
         .string()
         .optional()
-        .describe("Direction of travel (e.g., 'San Pedrito', 'Tigre')"),
+        .describe("Direction of travel (e.g., 'San Pedrito', 'Plaza de Mayo')"),
     limit: z
         .number()
         .int()
@@ -59,40 +53,92 @@ export const GetArrivalsSchema = z.object({
         .describe("Maximum number of arrivals to return (default: 5)"),
 });
 
-export type GetArrivalsInput = z.infer<typeof GetArrivalsSchema>;
+export type GetSubteArrivalsInput = z.infer<typeof GetSubteArrivalsSchema>;
 
 /**
- * Schema for get_status tool parameters
+ * Schema for get_train_arrivals tool parameters
  */
-export const GetStatusSchema = z.object({
-    line: TransitLineSchema.optional().describe(
-        "Specific line to check status for"
+export const GetTrainArrivalsSchema = z.object({
+    station: z
+        .string()
+        .min(1)
+        .describe(
+            "Station name or partial name to search for (e.g., 'Retiro', 'Once')"
+        ),
+    line: TrainLineSchema.optional().describe(
+        "Specific train line to filter by (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, or Belgrano Norte)"
     ),
-    type: TransitTypeSchema.optional().describe(
-        "Filter by transit type: 'subte' or 'train'"
+    direction: z
+        .string()
+        .optional()
+        .describe("Direction of travel (e.g., 'Tigre', 'Moreno')"),
+    limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(5)
+        .describe("Maximum number of arrivals to return (default: 5)"),
+});
+
+export type GetTrainArrivalsInput = z.infer<typeof GetTrainArrivalsSchema>;
+
+/**
+ * Schema for get_subte_status tool parameters
+ */
+export const GetSubteStatusSchema = z.object({
+    line: SubteLineSchema.optional().describe(
+        "Specific subte line to check status for (A, B, C, D, E, H, or Premetro). If omitted, returns status for all subte lines."
     ),
 });
 
-export type GetStatusInput = z.infer<typeof GetStatusSchema>;
+export type GetSubteStatusInput = z.infer<typeof GetSubteStatusSchema>;
+
+/**
+ * Schema for get_train_status tool parameters
+ */
+export const GetTrainStatusSchema = z.object({
+    line: TrainLineSchema.optional().describe(
+        "Specific train line to check status for (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, or Belgrano Norte). If omitted, returns status for all train lines."
+    ),
+});
+
+export type GetTrainStatusInput = z.infer<typeof GetTrainStatusSchema>;
 
 /**
  * Tool metadata for MCP registration
  */
 export const TOOLS = {
-    get_arrivals: {
-        name: "get_arrivals",
+    get_subte_arrivals: {
+        name: "get_subte_arrivals",
         description:
-            "Get real-time arrival predictions for a specific transit station in Buenos Aires. " +
-            "Returns upcoming train/subte arrivals with estimated times and any delays. " +
-            "Covers Subte (Lines A, B, C, D, E, H, Premetro) and Trains (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, Belgrano Norte).",
-        inputSchema: GetArrivalsSchema,
+            "Get real-time arrival predictions for Buenos Aires Subte (Metro) stations. " +
+            "Returns upcoming subte arrivals with estimated times and any delays. " +
+            "Covers Lines A, B, C, D, E, H, and Premetro.",
+        inputSchema: GetSubteArrivalsSchema,
     },
-    get_status: {
-        name: "get_status",
+    get_train_arrivals: {
+        name: "get_train_arrivals",
         description:
-            "Get current service status and alerts for Buenos Aires transit lines. " +
-            "Returns operational status and any active service alerts for each line. " +
-            "Can filter by specific line or transit type (subte/train).",
-        inputSchema: GetStatusSchema,
+            "Get real-time arrival predictions for Buenos Aires metropolitan train stations. " +
+            "Returns upcoming train arrivals with estimated times and any delays. " +
+            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, and Belgrano Norte lines.",
+        inputSchema: GetTrainArrivalsSchema,
+    },
+    get_subte_status: {
+        name: "get_subte_status",
+        description:
+            "Get current service status and alerts for Buenos Aires Subte (Metro) lines. " +
+            "Returns operational status and any active service alerts. " +
+            "Covers Lines A, B, C, D, E, H, and Premetro.",
+        inputSchema: GetSubteStatusSchema,
+    },
+    get_train_status: {
+        name: "get_train_status",
+        description:
+            "Get current service status and alerts for Buenos Aires metropolitan train lines. " +
+            "Returns operational status and any active service alerts. " +
+            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, and Belgrano Norte lines.",
+        inputSchema: GetTrainStatusSchema,
     },
 } as const;
