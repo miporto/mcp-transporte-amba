@@ -16,6 +16,14 @@ export interface Env {
     BA_API_URL?: string;
 }
 
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB
+
+const SECURITY_HEADERS = {
+    "Content-Type": "application/json",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+} as const;
+
 function createClientFromEnv(env: Env): BAClient {
     if (!env.BA_CLIENT_ID || !env.BA_CLIENT_SECRET) {
         throw new Error(
@@ -43,9 +51,7 @@ export default {
                     version: "0.1.0",
                     transport: "streamable-http",
                 }),
-                {
-                    headers: { "Content-Type": "application/json" },
-                }
+                { headers: SECURITY_HEADERS }
             );
         }
 
@@ -64,9 +70,7 @@ export default {
                         "get_train_status",
                     ],
                 }),
-                {
-                    headers: { "Content-Type": "application/json" },
-                }
+                { headers: SECURITY_HEADERS }
             );
         }
 
@@ -84,7 +88,7 @@ export default {
                     {
                         status: 405,
                         headers: {
-                            "Content-Type": "application/json",
+                            ...SECURITY_HEADERS,
                             "Allow": "POST",
                         },
                     }
@@ -92,33 +96,80 @@ export default {
             }
 
             if (request.method !== "POST") {
-                return new Response("Method Not Allowed", {
-                    status: 405,
-                    headers: { "Allow": "POST" },
-                });
+                return new Response(
+                    JSON.stringify({ error: "Method Not Allowed" }),
+                    {
+                        status: 405,
+                        headers: {
+                            ...SECURITY_HEADERS,
+                            "Allow": "POST",
+                        },
+                    }
+                );
             }
 
-            const client = createClientFromEnv(env);
-            const mcpServer = createMcpServer(client);
+            // Content-Type validation
+            const contentType = request.headers.get("content-type") || "";
+            if (!contentType.toLowerCase().includes("application/json")) {
+                return new Response(
+                    JSON.stringify({ error: "Unsupported Media Type. Use application/json." }),
+                    {
+                        status: 415,
+                        headers: SECURITY_HEADERS,
+                    }
+                );
+            }
 
-            // Stateless transport - no session management, JSON responses only
-            const transport = new WebStandardStreamableHTTPServerTransport({
-                sessionIdGenerator: undefined,
-                enableJsonResponse: true,
-            });
-
-            // Connect server to transport
-            await mcpServer.connect(transport);
+            // Request size limit
+            const contentLength = request.headers.get("content-length");
+            if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
+                return new Response(
+                    JSON.stringify({ error: "Request body too large." }),
+                    {
+                        status: 413,
+                        headers: SECURITY_HEADERS,
+                    }
+                );
+            }
 
             try {
-                // Handle the request
-                return await transport.handleRequest(request);
-            } finally {
-                // Clean up transport after request
-                await transport.close();
+                const client = createClientFromEnv(env);
+                const mcpServer = createMcpServer(client);
+
+                // Stateless transport - no session management, JSON responses only
+                const transport = new WebStandardStreamableHTTPServerTransport({
+                    sessionIdGenerator: undefined,
+                    enableJsonResponse: true,
+                });
+
+                // Connect server to transport
+                await mcpServer.connect(transport);
+
+                try {
+                    // Handle the request
+                    return await transport.handleRequest(request);
+                } finally {
+                    // Clean up transport after request
+                    await transport.close();
+                }
+            } catch (err) {
+                console.error("Error handling /mcp request", err);
+                return new Response(
+                    JSON.stringify({ error: "Internal server error" }),
+                    {
+                        status: 500,
+                        headers: SECURITY_HEADERS,
+                    }
+                );
             }
         }
 
-        return new Response("Not Found", { status: 404 });
+        return new Response(
+            JSON.stringify({ error: "Not Found" }),
+            {
+                status: 404,
+                headers: SECURITY_HEADERS,
+            }
+        );
     },
 };
