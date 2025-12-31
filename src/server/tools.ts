@@ -25,6 +25,7 @@ export const TrainLineSchema = z.enum([
     "San Martín",
     "Belgrano Sur",
     "Belgrano Norte",
+    "Tren de la Costa",
 ]);
 
 /**
@@ -66,7 +67,7 @@ export const GetTrainArrivalsSchema = z.object({
             "Station name or partial name to search for (e.g., 'Retiro', 'Once')"
         ),
     line: TrainLineSchema.optional().describe(
-        "Specific train line to filter by (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, or Belgrano Norte)"
+        "Specific train line to filter by (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, Belgrano Norte, or Tren de la Costa)"
     ),
     direction: z
         .string()
@@ -99,7 +100,7 @@ export type GetSubteStatusInput = z.infer<typeof GetSubteStatusSchema>;
  */
 export const GetTrainStatusSchema = z.object({
     line: TrainLineSchema.optional().describe(
-        "Specific train line to check status for (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, or Belgrano Norte). If omitted, returns status for all train lines."
+        "Specific train line to check status for (Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, Belgrano Norte, or Tren de la Costa). If omitted, returns status for all train lines."
     ),
 });
 
@@ -123,7 +124,7 @@ export const TOOLS = {
         description:
             "Get real-time arrival predictions for Buenos Aires metropolitan train stations. " +
             "Returns upcoming train arrivals with estimated times and any delays. " +
-            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, and Belgrano Norte lines.",
+            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, Belgrano Norte, and Tren de la Costa lines.",
         inputSchema: GetTrainArrivalsSchema,
     },
     get_subte_status: {
@@ -139,7 +140,7 @@ export const TOOLS = {
         description:
             "Get current service status and alerts for Buenos Aires metropolitan train lines. " +
             "Returns operational status and any active service alerts. " +
-            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, and Belgrano Norte lines.",
+            "Covers Mitre, Sarmiento, Roca, San Martín, Belgrano Sur, Belgrano Norte, and Tren de la Costa lines.",
         inputSchema: GetTrainStatusSchema,
     },
 } as const;

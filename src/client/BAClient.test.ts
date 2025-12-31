@@ -6,9 +6,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BAClient } from "./BAClient.js";
 import type {
     GCBASubteForecastResponse,
-    GCBATrainTripUpdateResponse,
     GCBAServiceAlertsResponse,
 } from "./types.js";
+import type { SOFSEArribosResponse, SOFSEGerencia, SOFSEStation } from "./sofse/index.js";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -74,13 +74,68 @@ function createMockSubteForecast(
     };
 }
 
+/**
+ * Helper to create a mock SOFSE token response
+ */
+function createMockSOFSEToken(): { token: string } {
+    const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64");
+    const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64");
+    return { token: `${header}.${payload}.signature` };
+}
+
+/**
+ * Helper to create mock SOFSE stations response
+ */
+function createMockSOFSEStations(stations: Partial<SOFSEStation>[]): SOFSEStation[] {
+    return stations.map((s, i) => ({
+        nombre: s.nombre ?? "Test Station",
+        id_estacion: s.id_estacion ?? String(100 + i),
+        id_tramo: s.id_tramo ?? "1",
+        orden: s.orden ?? "1",
+        id_referencia: s.id_referencia ?? String(1000 + i),
+        latitud: s.latitud ?? "-34.5",
+        longitud: s.longitud ?? "-58.5",
+        referencia_orden: s.referencia_orden ?? "1",
+        radio: s.radio ?? "",
+        andenes_habilitados: s.andenes_habilitados ?? "2",
+        visibilidad: s.visibilidad ?? { totem: 1, app_mobile: 1 },
+        incluida_en_ramales: s.incluida_en_ramales ?? [9],
+        operativa_en_ramales: s.operativa_en_ramales ?? [9],
+    }));
+}
+
+/**
+ * Helper to create mock SOFSE arrivals response
+ */
+function createMockSOFSEArribos(): SOFSEArribosResponse {
+    return {
+        timestamp: Math.floor(Date.now() / 1000),
+        results: [],
+        total: 0,
+    };
+}
+
+/**
+ * Helper to create mock SOFSE gerencias response
+ */
+function createMockSOFSEGerencias(gerencias: Partial<SOFSEGerencia>[]): SOFSEGerencia[] {
+    return gerencias.map((g) => ({
+        id: g.id ?? 5,
+        id_empresa: g.id_empresa ?? 1,
+        nombre: g.nombre ?? "Mitre",
+        estado: g.estado ?? { id: 13, mensaje: "Servicio Normal", color: "#00aa00" },
+        alerta: g.alerta ?? [],
+    }));
+}
+
 describe("BAClient", () => {
     let client: BAClient;
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         // @ts-expect-error - mocking global fetch
         globalThis.fetch = mockFetch;
+        // Create a fresh client for each test
         client = new BAClient({
             clientId: "test_client_id",
             clientSecret: "test_client_secret",
@@ -102,13 +157,11 @@ describe("BAClient", () => {
                 ]),
             ]);
 
-            const mockTrainResponse: GCBATrainTripUpdateResponse = {
-                entity: [],
-            };
-
             mockFetch
                 .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
 
             const arrivals = await client.getArrivals({ station: "Plaza" });
 
@@ -139,6 +192,7 @@ describe("BAClient", () => {
                 ]),
             ]);
 
+            // Only subte API is called when filtering by subte line
             mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
             const arrivals = await client.getArrivals({
@@ -165,11 +219,11 @@ describe("BAClient", () => {
                 )
             );
 
-            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
-
             mockFetch
                 .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
 
             const arrivals = await client.getArrivals({
                 station: "Test",
@@ -180,6 +234,7 @@ describe("BAClient", () => {
         });
 
         it("should handle API errors gracefully", async () => {
+            // Request a specific subte line to avoid SOFSE calls
             mockFetch.mockResolvedValueOnce({
                 ok: false,
                 status: 401,
@@ -189,7 +244,7 @@ describe("BAClient", () => {
                 },
             });
 
-            await expect(client.getArrivals({ station: "Test" })).rejects.toThrow(
+            await expect(client.getArrivals({ station: "Test", line: "A" })).rejects.toThrow(
                 "API request failed: 401 Unauthorized"
             );
         });
@@ -204,13 +259,10 @@ describe("BAClient", () => {
                 ]),
             ]);
 
-            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+            // Filter by subte line to avoid SOFSE calls
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
-
-            const arrivals = await client.getArrivals({ station: "Plaza de Mayo" });
+            const arrivals = await client.getArrivals({ station: "Plaza de Mayo", line: "A" });
 
             expect(arrivals).toHaveLength(1);
             expect(arrivals[0]?.station.name).toBe("Plaza de Mayo");
@@ -226,13 +278,10 @@ describe("BAClient", () => {
                 ]),
             ]);
 
-            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+            // Filter by subte line to avoid SOFSE calls
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
-
-            const arrivals = await client.getArrivals({ station: "Saenz Pena" });
+            const arrivals = await client.getArrivals({ station: "Saenz Pena", line: "A" });
 
             expect(arrivals).toHaveLength(1);
             expect(arrivals[0]?.station.name).toBe("Sáenz Peña");
@@ -248,13 +297,10 @@ describe("BAClient", () => {
                 ]),
             ]);
 
-            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
+            // Filter by subte line to avoid SOFSE calls
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
-
-            const arrivals = await client.getArrivals({ station: "Plaza de Mayo" });
+            const arrivals = await client.getArrivals({ station: "Plaza de Mayo", line: "A" });
 
             expect(arrivals).toHaveLength(1);
             expect(arrivals[0]?.delaySeconds).toBe(120);
@@ -284,16 +330,25 @@ describe("BAClient", () => {
                 ],
             };
 
-            const mockTrainAlerts: GCBAServiceAlertsResponse = { entity: [] };
+            const mockSOFSEGerencias = createMockSOFSEGerencias([
+                { id: 1, nombre: "Sarmiento" },
+                { id: 5, nombre: "Mitre" },
+                { id: 11, nombre: "Roca" },
+                { id: 21, nombre: "Belgrano Sur" },
+                { id: 31, nombre: "San Martín" },
+                { id: 41, nombre: "Tren de la Costa" },
+                { id: 51, nombre: "Belgrano Norte" },
+            ]);
 
             mockFetch
                 .mockResolvedValueOnce(mockJsonResponse(mockSubteAlerts))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainAlerts));
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
+                .mockResolvedValueOnce(mockJsonResponse(mockSOFSEGerencias));
 
             const statuses = await client.getStatus({});
 
-            // Should have all lines (7 subte + 6 train)
-            expect(statuses.length).toBe(13);
+            // Should have all lines (7 subte + 7 train)
+            expect(statuses.length).toBe(14);
 
             // Line A should have an alert
             const lineA = statuses.find((s) => s.line === "A");
@@ -317,11 +372,12 @@ describe("BAClient", () => {
     describe("authentication", () => {
         it("should include client_id and client_secret in requests", async () => {
             const mockSubteResponse = createMockSubteForecast([]);
-            const mockTrainResponse: GCBATrainTripUpdateResponse = { entity: [] };
 
             mockFetch
                 .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(mockTrainResponse));
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
 
             await client.getArrivals({ station: "test" });
 

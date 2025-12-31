@@ -12,7 +12,8 @@ export type TrainLine =
     | "Roca"
     | "San Martín"
     | "Belgrano Sur"
-    | "Belgrano Norte";
+    | "Belgrano Norte"
+    | "Tren de la Costa";
 
 /** All transit lines */
 export type TransitLine = SubteLine | TrainLine;
