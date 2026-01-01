@@ -49,6 +49,21 @@ export interface Arrival {
     minutesAway: number;
     /** Trip identifier from GTFS-RT */
     tripId: string;
+
+    /** Train-only: ramal identifier (SOFSE) */
+    ramalId?: number;
+
+    /** Train-only: ramal display name (SOFSE) */
+    ramalName?: string;
+
+    /** Train-only: platform/track (anden) */
+    platform?: string | null;
+
+    /** Train-only: service state text from SOFSE (e.g. 'EN HORARIO') */
+    status?: string;
+
+    /** Train-only: whether the train is currently en_viaje */
+    inTravel?: boolean;
 }
 
 /** Service alert severity */
@@ -71,6 +86,45 @@ export interface LineStatus {
     type: TransitType;
     isOperational: boolean;
     alerts: ServiceAlert[];
+
+    /** Train-only: optional per-ramal breakdown */
+    ramales?: Array<{
+        ramalId: number;
+        ramalName: string;
+        isOperational: boolean;
+        alerts: ServiceAlert[];
+    }>;
+}
+
+/** Train line (SOFSE gerencia) info for discovery tools */
+export interface TrainLineInfo {
+    lineId: number;
+    line: TrainLine;
+    statusMessage: string;
+    isOperational: boolean;
+    alertsCount: number;
+}
+
+/** Train ramal (branch) info for discovery tools */
+export interface TrainRamalInfo {
+    ramalId: number;
+    ramalName: string;
+    lineId: number;
+    line: TrainLine;
+    cabeceraInicial: string;
+    cabeceraFinal: string;
+    isOperational: boolean;
+    alertsCount: number;
+}
+
+/** Train station candidate for search/resolve tools */
+export interface TrainStationCandidate {
+    stationId: number;
+    stationName: string;
+    /** Ramales this station belongs to (SOFSE incluida_en_ramales) */
+    ramalIds: number[];
+    /** Lines inferred from ramal membership */
+    lines: TrainLine[];
 }
 
 /** GCBA API response for subte forecast */

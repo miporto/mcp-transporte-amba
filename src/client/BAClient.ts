@@ -15,9 +15,12 @@ import type {
     LineStatus,
     TransitLine,
     TrainLine,
+    TrainLineInfo,
+    TrainRamalInfo,
+    TrainStationCandidate,
 } from "./types.js";
 import { normalizeStationString } from "./stringUtils.js";
-import { SOFSEClient, SOFSE_LINE_MAP } from "./sofse/index.js";
+import { LINE_TO_SOFSE_ID, SOFSEClient, SOFSE_LINE_MAP } from "./sofse/index.js";
 
 const DEFAULT_BASE_URL = "https://apitransporte.buenosaires.gob.ar";
 
@@ -42,17 +45,74 @@ const TRAIN_LINES: TrainLine[] = [
     "Tren de la Costa",
 ];
 
+const TRAIN_INDEX_TTL_MS = 15 * 60 * 1000;
+
+interface TrainIndex {
+    generatedAt: number;
+    ramalIdToLine: Map<number, TrainLine>;
+    ramalIdToRamalName: Map<number, string>;
+    ramalIdsByLine: Map<TrainLine, number[]>;
+    lineIdByLine: Map<TrainLine, number>;
+}
+
 export class BAClient {
     private readonly clientId: string;
     private readonly clientSecret: string;
     private readonly baseUrl: string;
     private readonly sofseClient: SOFSEClient;
 
+    private trainIndex: TrainIndex | null = null;
+
     constructor(config: BAClientConfig) {
         this.clientId = config.clientId;
         this.clientSecret = config.clientSecret;
         this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
         this.sofseClient = new SOFSEClient();
+    }
+
+    private parseSOFSEStationId(id: string): number | null {
+        const parsed = Number.parseInt(id, 10);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    private async getTrainIndex(): Promise<TrainIndex> {
+        if (this.trainIndex && Date.now() - this.trainIndex.generatedAt < TRAIN_INDEX_TTL_MS) {
+            return this.trainIndex;
+        }
+
+        const gerencias = await this.sofseClient.getGerencias();
+
+        const ramalIdToLine = new Map<number, TrainLine>();
+        const ramalIdToRamalName = new Map<number, string>();
+        const ramalIdsByLine = new Map<TrainLine, number[]>();
+        const lineIdByLine = new Map<TrainLine, number>();
+
+        for (const gerencia of gerencias) {
+            const lineName = SOFSE_LINE_MAP[gerencia.id];
+            if (!lineName) continue;
+            if (!TRAIN_LINES.includes(lineName as TrainLine)) continue;
+
+            const line = lineName as TrainLine;
+            lineIdByLine.set(line, gerencia.id);
+
+            const ramales = await this.sofseClient.getRamales(gerencia.id);
+            for (const ramal of ramales) {
+                ramalIdToLine.set(ramal.id, line);
+                ramalIdToRamalName.set(ramal.id, ramal.nombre);
+            }
+
+            ramalIdsByLine.set(line, ramales.map((r) => r.id));
+        }
+
+        this.trainIndex = {
+            generatedAt: Date.now(),
+            ramalIdToLine,
+            ramalIdToRamalName,
+            ramalIdsByLine,
+            lineIdByLine,
+        };
+
+        return this.trainIndex;
     }
 
     /**
@@ -145,7 +205,10 @@ export class BAClient {
 
         // Fetch train status from SOFSE
         if (!params.type || params.type === "train") {
-            const trainStatuses = await this.fetchTrainStatusFromSOFSE(params.line);
+            const filterLine = params.line && this.isTrainLine(params.line)
+                ? params.line as TrainLine
+                : undefined;
+            const trainStatuses = await this.fetchTrainStatusFromSOFSE(filterLine);
             statuses.push(...trainStatuses);
         }
 
@@ -170,38 +233,266 @@ export class BAClient {
      * Fetch train arrivals from SOFSE API
      */
     private async fetchTrainArrivalsFromSOFSE(params: GetArrivalsParams): Promise<Arrival[]> {
-        const arrivals: Arrival[] = [];
-        const now = Date.now();
-
-        // Search for stations matching the query
-        const stations = await this.sofseClient.searchStations(params.station);
-        if (stations.length === 0) {
-            return arrivals;
-        }
-
-        // Get arrivals for the first matching station
-        const station = stations[0];
-        if (!station) {
-            return arrivals;
-        }
-
-        const response = await this.sofseClient.getArrivals(station.id_estacion, {
-            cantidad: params.limit ?? 5,
+        const resolved = await this.resolveTrainStation({
+            station: params.station,
+            line: params.line && this.isTrainLine(params.line) ? params.line as TrainLine : undefined,
+            ramalId: undefined,
         });
 
-        // Convert SOFSE arrivals to our Arrival format
-        for (const arribo of response.results) {
-            // Determine the line from the ramal
-            const line = this.getLineFromRamalId(arribo.ramal_id) ?? "Mitre";
+        if (!resolved.station) {
+            return [];
+        }
 
-            // Filter by line if specified
+        const filterLine = params.line && this.isTrainLine(params.line)
+            ? params.line as TrainLine
+            : undefined;
+
+        return this.getTrainArrivals({
+            stationId: resolved.station.stationId,
+            line: filterLine,
+            direction: params.direction,
+            limit: params.limit,
+        });
+    }
+
+    /**
+     * List SOFSE train lines (líneas) for discovery tools
+     */
+    async listTrainLines(): Promise<TrainLineInfo[]> {
+        const gerencias = await this.sofseClient.getGerencias();
+        const result: TrainLineInfo[] = [];
+
+        for (const gerencia of gerencias) {
+            const lineName = SOFSE_LINE_MAP[gerencia.id];
+            if (!lineName) continue;
+            if (!TRAIN_LINES.includes(lineName as TrainLine)) continue;
+
+            const line = lineName as TrainLine;
+
+            result.push({
+                lineId: gerencia.id,
+                line,
+                statusMessage: gerencia.estado.mensaje,
+                isOperational: gerencia.estado.id !== 1,
+                alertsCount: gerencia.alerta.length,
+            });
+        }
+
+        return result;
+    }
+
+    /**
+     * List ramales for a given train line
+     */
+    async listTrainRamales(params: { line?: TrainLine; lineId?: number }): Promise<TrainRamalInfo[]> {
+        const index = await this.getTrainIndex();
+
+        let lineId = params.lineId;
+        let line = params.line;
+
+        if (!lineId && line) {
+            lineId = LINE_TO_SOFSE_ID[line];
+        }
+
+        if (!line && lineId) {
+            for (const [l, id] of index.lineIdByLine.entries()) {
+                if (id === lineId) {
+                    line = l;
+                    break;
+                }
+            }
+        }
+
+        if (!lineId || !line) {
+            throw new Error("Debe especificar line o lineId para listar ramales");
+        }
+
+        const ramales = await this.sofseClient.getRamales(lineId);
+
+        return ramales.map((r) => ({
+            ramalId: r.id,
+            ramalName: r.nombre,
+            lineId,
+            line,
+            cabeceraInicial: r.cabecera_inicial.nombre,
+            cabeceraFinal: r.cabecera_final.nombre,
+            isOperational: r.operativo === 1,
+            alertsCount: r.alerta.length,
+        }));
+    }
+
+    /**
+     * List stations for a given ramal
+     */
+    async listTrainStations(ramalId: number): Promise<TrainStationCandidate[]> {
+        const index = await this.getTrainIndex();
+        const line = index.ramalIdToLine.get(ramalId);
+        if (!line) {
+            throw new Error(`No se pudo determinar la línea para el ramal ${ramalId}`);
+        }
+
+        const stations = await this.sofseClient.getStationsByRamal(ramalId);
+        const result: TrainStationCandidate[] = [];
+
+        for (const station of stations) {
+            const stationId = this.parseSOFSEStationId(station.id_estacion);
+            if (stationId === null) continue;
+
+            const ramalIds = station.incluida_en_ramales;
+            const lines = this.getLinesForRamalIds(ramalIds, index);
+
+            result.push({
+                stationId,
+                stationName: station.nombre,
+                ramalIds,
+                lines,
+            });
+        }
+
+        return result;
+    }
+
+    /**
+     * Search stations by name with optional filters
+     */
+    async searchTrainStations(params: {
+        query: string;
+        line?: TrainLine;
+        ramalId?: number;
+        limit?: number;
+    }): Promise<TrainStationCandidate[]> {
+        const index = await this.getTrainIndex();
+        const normalizedQuery = normalizeStationString(params.query);
+
+        const stations = await this.sofseClient.searchStations(params.query);
+
+        const lineRamalIds = params.line ? index.ramalIdsByLine.get(params.line) ?? [] : null;
+        const result: TrainStationCandidate[] = [];
+
+        for (const station of stations) {
+            const stationId = this.parseSOFSEStationId(station.id_estacion);
+            if (stationId === null) continue;
+
+            const nameNormalized = normalizeStationString(station.nombre);
+            if (!nameNormalized.includes(normalizedQuery)) continue;
+
+            const ramalIds = station.incluida_en_ramales;
+
+            if (params.ramalId && !ramalIds.includes(params.ramalId)) {
+                continue;
+            }
+
+            if (lineRamalIds) {
+                const matchesLine = ramalIds.some((id) => lineRamalIds.includes(id));
+                if (!matchesLine) continue;
+            }
+
+            const lines = this.getLinesForRamalIds(ramalIds, index);
+
+            result.push({
+                stationId,
+                stationName: station.nombre,
+                ramalIds,
+                lines,
+            });
+
+            if (params.limit && result.length >= params.limit) {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Resolve a station query to a single station, or return disambiguation candidates.
+     */
+    async resolveTrainStation(params: {
+        station: string;
+        line?: TrainLine;
+        ramalId?: number;
+    }): Promise<{ station?: TrainStationCandidate; candidates: TrainStationCandidate[]; issues: string[] }> {
+        const issues: string[] = [];
+
+        const candidates = await this.searchTrainStations({
+            query: params.station,
+            line: params.line,
+            ramalId: params.ramalId,
+            limit: 25,
+        });
+
+        if (candidates.length === 0) {
+            issues.push(`No se encontró ninguna estación que coincida con "${params.station}".`);
+            if (params.line) {
+                issues.push(`Filtro aplicado: línea ${params.line}.`);
+            }
+            if (params.ramalId) {
+                issues.push(`Filtro aplicado: ramalId ${params.ramalId}.`);
+            }
+            return { station: undefined, candidates: [], issues };
+        }
+
+        if (candidates.length === 1) {
+            return { station: candidates[0], candidates, issues };
+        }
+
+        // Prefer exact normalized match if unique
+        const normalizedQuery = normalizeStationString(params.station);
+        const exact = candidates.filter((c) => normalizeStationString(c.stationName) === normalizedQuery);
+        if (exact.length === 1) {
+            return { station: exact[0], candidates, issues };
+        }
+
+        issues.push(`La estación "${params.station}" es ambigua. Coincide con múltiples estaciones.`);
+        issues.push("Por favor use stationId (recomendado) o refine con line y/o ramalId.");
+
+        return { station: undefined, candidates, issues };
+    }
+
+    /**
+     * Get train arrivals from SOFSE, deterministically by stationId.
+     */
+    async getTrainArrivals(params: {
+        stationId: string | number;
+        line?: TrainLine;
+        ramalId?: number;
+        direction?: string;
+        limit?: number;
+    }): Promise<Arrival[]> {
+        const index = await this.getTrainIndex();
+        const now = Date.now();
+        const limit = params.limit ?? 5;
+
+        const response = await this.sofseClient.getArrivals(params.stationId, {
+            cantidad: limit,
+            ramal: params.ramalId,
+        });
+
+        const normalizedDirection = params.direction
+            ? normalizeStationString(params.direction)
+            : null;
+
+        const arrivals: Arrival[] = [];
+
+        for (const arribo of response.results) {
+            const line = index.ramalIdToLine.get(arribo.ramal_id);
+            if (!line) continue;
+
             if (params.line && line !== params.line) continue;
 
-            // Parse arrival time
+            const destination = arribo.destino || arribo.cabecera;
+            if (normalizedDirection) {
+                const normalizedDestination = normalizeStationString(destination);
+                if (!normalizedDestination.includes(normalizedDirection)) {
+                    continue;
+                }
+            }
+
             const arrivalTime = this.parseSOFSETime(arribo.hora_llegada);
             if (!arrivalTime || arrivalTime.getTime() < now) continue;
 
             const minutesAway = Math.round((arrivalTime.getTime() - now) / 60000);
+            const ramalName = index.ramalIdToRamalName.get(arribo.ramal_id) ?? arribo.ramal_nombre;
 
             arrivals.push({
                 station: {
@@ -210,21 +501,33 @@ export class BAClient {
                     line,
                     type: "train",
                 },
-                destination: arribo.destino || arribo.cabecera,
+                destination,
                 arrivalTime: arrivalTime.toISOString(),
                 delaySeconds: 0,
                 minutesAway,
                 tripId: arribo.tren_id ?? `sofse-${arribo.id}`,
+                ramalId: arribo.ramal_id,
+                ramalName,
+                platform: arribo.anden,
+                status: arribo.estado,
+                inTravel: arribo.en_viaje,
             });
         }
 
-        return arrivals;
+        return arrivals.sort((a, b) => a.minutesAway - b.minutesAway).slice(0, limit);
+    }
+
+    /**
+     * Get train status, optionally including per-ramal breakdown.
+     */
+    async getTrainStatus(params: { line?: TrainLine; includeRamales?: boolean }): Promise<LineStatus[]> {
+        return this.fetchTrainStatusFromSOFSE(params.line, params.includeRamales);
     }
 
     /**
      * Fetch train status from SOFSE API
      */
-    private async fetchTrainStatusFromSOFSE(filterLine?: TransitLine): Promise<LineStatus[]> {
+    private async fetchTrainStatusFromSOFSE(filterLine?: TrainLine, includeRamales = false): Promise<LineStatus[]> {
         const gerencias = await this.sofseClient.getGerencias();
         const statuses: LineStatus[] = [];
 
@@ -235,7 +538,7 @@ export class BAClient {
             // Skip non-train lines (like Regionales)
             if (!TRAIN_LINES.includes(lineName as TrainLine)) continue;
 
-            const line = lineName as TransitLine;
+            const line = lineName as TrainLine;
 
             // Filter by line if specified
             if (filterLine && line !== filterLine) continue;
@@ -255,10 +558,32 @@ export class BAClient {
                 type: "train",
                 isOperational: gerencia.estado.id !== 1,
                 alerts,
+                ramales: includeRamales
+                    ? await this.fetchRamalStatuses(gerencia.id, line)
+                    : undefined,
             });
         }
 
         return statuses;
+    }
+
+    private async fetchRamalStatuses(gerenciaId: number, line: TrainLine): Promise<LineStatus["ramales"]> {
+        const ramales = await this.sofseClient.getRamales(gerenciaId);
+
+        return ramales.map((r) => ({
+            ramalId: r.id,
+            ramalName: r.nombre,
+            isOperational: r.operativo === 1,
+            alerts: r.alerta.map((a) => ({
+                line,
+                type: "train" as const,
+                severity: this.mapSOFSESeverity(a.criticidad_orden),
+                title: r.nombre,
+                description: a.contenido,
+                startTime: a.vigencia_desde,
+                endTime: a.vigencia_hasta ?? undefined,
+            })),
+        }));
     }
 
     /**
@@ -289,29 +614,15 @@ export class BAClient {
     /**
      * Get line name from SOFSE ramal ID
      */
-    private getLineFromRamalId(ramalId: number): TrainLine | null {
-        // Ramal IDs to gerencia (line) mapping based on SOFSE data
-        const ramalToGerencia: Record<number, number> = {
-            // Mitre ramales
-            9: 5, 7: 5, 141: 5, 151: 5, 171: 5, 5: 5,
-            // Sarmiento ramales
-            1: 1, 3: 1, 11: 1,
-            // Roca ramales
-            103: 11, 109: 11, 115: 11, 121: 11, 127: 11, 133: 11,
-            // San Martín ramales
-            31: 31, 65: 31, 131: 31,
-            // Belgrano Sur ramales
-            21: 21, 23: 21, 25: 21,
-            // Belgrano Norte ramales
-            51: 51, 53: 51,
-            // Tren de la Costa
-            41: 41, 43: 41,
-        };
-
-        const gerenciaId = ramalToGerencia[ramalId];
-        if (!gerenciaId) return null;
-
-        return (SOFSE_LINE_MAP[gerenciaId] as TrainLine) ?? null;
+    private getLinesForRamalIds(ramalIds: number[], index: TrainIndex): TrainLine[] {
+        const lines = new Set<TrainLine>();
+        for (const ramalId of ramalIds) {
+            const line = index.ramalIdToLine.get(ramalId);
+            if (line) {
+                lines.add(line);
+            }
+        }
+        return Array.from(lines);
     }
 
     /**

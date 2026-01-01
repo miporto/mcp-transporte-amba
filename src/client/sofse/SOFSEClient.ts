@@ -133,6 +133,13 @@ export class SOFSEClient {
     }
 
     /**
+     * Get stations for a specific ramal
+     */
+    async getStationsByRamal(ramalId: number): Promise<SOFSEStation[]> {
+        return this.fetch<SOFSEStation[]>(`/infraestructura/estaciones?idRamal=${ramalId}`);
+    }
+
+    /**
      * Get all gerencias (train lines) for empresa ID 1 (metropolitan trains)
      */
     async getGerencias(): Promise<SOFSEGerencia[]> {

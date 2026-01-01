@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: API de Trenes SOFSE
+  description: >-
+    Este proyecto tiene como objetivo permitir el acceso público a la API de
+    Trenes de SOFSE, eludiendo la seguridad por oscurecimiento de su API
+    interna.
+
+
+    Todos los endpoints y parámetros son los mismos que el servicio original;
+    esto es solo un proxy que hace que el proceso de autenticación sea accesible
+    para uso público.
+
+
+    Esto fue posible mediante la extracción del código de la aplicación Android
+    de Trenes SOFSE.
+
+
+    [Aquí hay una publicación en el
+    blog](https://ariedro.dev/3-hack-trains-api/) que describe el proceso detrás
+    de esto.
+
+
+    - Repositorio:
+    [https://github.com/ariedro/api-trenes](https://github.com/ariedro/api-trenes)
+  version: 1.0.0
+  contact:
+    name: Ariel Aguirre @ariedro
+    url: https://ariedro.dev/contact/
+servers:
+  - url: https://ariedro.dev/api-trenes
+    description: Instancia pública
+paths:
+  /infraestructura/estaciones:
+    get:
+      summary: Buscar estaciones
+      description: Busca estaciones por nombre o ramal
+      parameters:
+        - name: nombre
+          in: query
+          description: Nombre de la estación (o parte de él)
+          schema:
+            type: string
+        - name: idRamal
+          in: query
+          description: ID del ramal
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de estaciones coincidentes
+      operationId: get-infraestructura-estaciones
+      tags:
+        - Default
+  /infraestructura/ramales:
+    get:
+      summary: Obtener ramales
+      description: Recupera información de ramales
+      parameters:
+        - name: idGerencia
+          in: query
+          description: ID de la gerencia
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de ramales
+      operationId: get-infraestructura-ramales
+      tags:
+        - Default
+  /infraestructura/gerencias:
+    get:
+      summary: Obtener gerencias
+      description: Recupera información de gerencias
+      parameters:
+        - name: idEmpresa
+          in: query
+          description: ID de la empresa
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de gerencias
+      operationId: get-infraestructura-gerencias
+      tags:
+        - Default
+  /arribos/estacion/{id}:
+    get:
+      summary: Obtener arribos de estación
+      description: Recupera información de arribos para una estación específica
+      parameters:
+        - name: id
+          in: path
+          description: ID de la estación
+          required: true
+          schema:
+            type: integer
+        - name: hasta
+          in: query
+          description: ID de la estación de destino
+          schema:
+            type: integer
+        - name: fecha
+          in: query
+          description: Fecha de los arribos
+          schema:
+            type: string
+            format: date
+        - name: hora
+          in: query
+          description: Hora de los arribos
+          schema:
+            type: string
+            format: time
+        - name: cantidad
+          in: query
+          description: Cantidad de arribos a devolver
+          schema:
+            type: integer
+        - name: paraApp
+          in: query
+          description: Indicador para la aplicación
+          schema:
+            type: boolean
+        - name: ramal
+          in: query
+          description: ID del ramal
+          schema:
+            type: integer
+        - name: sentido
+          in: query
+          description: Sentido del viaje
+          schema:
+            type: integer
+        - name: tipoBusqueda
+          in: query
+          description: Tipo de búsqueda
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Información de arribos
+      operationId: get-arribos-estacion-{id}
+      tags:
+        - Default
+tags:
+  - name: Default
+    description: ''
+externalDocs: {}

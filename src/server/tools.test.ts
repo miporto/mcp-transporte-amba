@@ -4,11 +4,48 @@
 
 import { describe, it, expect } from "vitest";
 import {
+    ListTrainLinesSchema,
+    ListTrainRamalesSchema,
+    ListTrainStationsSchema,
+    SearchTrainStationsSchema,
     GetSubteArrivalsSchema,
     GetTrainArrivalsSchema,
     GetSubteStatusSchema,
     GetTrainStatusSchema,
 } from "./tools.js";
+
+describe("ListTrainLinesSchema", () => {
+    it("should default empresaId to 1", () => {
+        const result = ListTrainLinesSchema.parse({});
+        expect(result.empresaId).toBe(1);
+    });
+});
+
+describe("ListTrainRamalesSchema", () => {
+    it("should accept line", () => {
+        const result = ListTrainRamalesSchema.parse({ line: "Mitre" });
+        expect(result.line).toBe("Mitre");
+    });
+
+    it("should accept lineId", () => {
+        const result = ListTrainRamalesSchema.parse({ lineId: 5 });
+        expect(result.lineId).toBe(5);
+    });
+});
+
+describe("ListTrainStationsSchema", () => {
+    it("should require ramalId", () => {
+        const result = ListTrainStationsSchema.parse({ ramalId: 9 });
+        expect(result.ramalId).toBe(9);
+    });
+});
+
+describe("SearchTrainStationsSchema", () => {
+    it("should default limit to 10", () => {
+        const result = SearchTrainStationsSchema.parse({ query: "Retiro" });
+        expect(result.limit).toBe(10);
+    });
+});
 
 describe("GetSubteArrivalsSchema", () => {
     it("should accept valid minimal input", () => {
@@ -74,6 +111,13 @@ describe("GetTrainArrivalsSchema", () => {
         expect(result.limit).toBe(5); // default
     });
 
+    it("should accept stationId input", () => {
+        const input = { stationId: 123 };
+        const result = GetTrainArrivalsSchema.parse(input);
+        expect(result.stationId).toBe(123);
+        expect(result.limit).toBe(5);
+    });
+
     it("should accept valid full input", () => {
         const input = {
             station: "Retiro",
@@ -87,7 +131,15 @@ describe("GetTrainArrivalsSchema", () => {
     });
 
     it("should accept all train lines", () => {
-        const lines = ["Mitre", "Sarmiento", "Roca", "San Martín", "Belgrano Sur", "Belgrano Norte"] as const;
+        const lines = [
+            "Mitre",
+            "Sarmiento",
+            "Roca",
+            "San Martín",
+            "Belgrano Sur",
+            "Belgrano Norte",
+            "Tren de la Costa",
+        ] as const;
         for (const line of lines) {
             const result = GetTrainArrivalsSchema.parse({ station: "Test", line });
             expect(result.line).toBe(line);
@@ -154,11 +206,24 @@ describe("GetTrainStatusSchema", () => {
     });
 
     it("should accept all train lines", () => {
-        const lines = ["Mitre", "Sarmiento", "Roca", "San Martín", "Belgrano Sur", "Belgrano Norte"] as const;
+        const lines = [
+            "Mitre",
+            "Sarmiento",
+            "Roca",
+            "San Martín",
+            "Belgrano Sur",
+            "Belgrano Norte",
+            "Tren de la Costa",
+        ] as const;
         for (const line of lines) {
             const result = GetTrainStatusSchema.parse({ line });
             expect(result.line).toBe(line);
         }
+    });
+
+    it("should accept includeRamales", () => {
+        const result = GetTrainStatusSchema.parse({ line: "Mitre", includeRamales: true });
+        expect(result.includeRamales).toBe(true);
     });
 
     it("should reject subte lines", () => {

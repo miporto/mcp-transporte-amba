@@ -8,7 +8,7 @@ import type {
     GCBASubteForecastResponse,
     GCBAServiceAlertsResponse,
 } from "./types.js";
-import type { SOFSEArribosResponse, SOFSEGerencia, SOFSEStation } from "./sofse/index.js";
+import type { SOFSEArribosResponse, SOFSEGerencia } from "./sofse/index.js";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -83,35 +83,11 @@ function createMockSOFSEToken(): { token: string } {
     return { token: `${header}.${payload}.signature` };
 }
 
-/**
- * Helper to create mock SOFSE stations response
- */
-function createMockSOFSEStations(stations: Partial<SOFSEStation>[]): SOFSEStation[] {
-    return stations.map((s, i) => ({
-        nombre: s.nombre ?? "Test Station",
-        id_estacion: s.id_estacion ?? String(100 + i),
-        id_tramo: s.id_tramo ?? "1",
-        orden: s.orden ?? "1",
-        id_referencia: s.id_referencia ?? String(1000 + i),
-        latitud: s.latitud ?? "-34.5",
-        longitud: s.longitud ?? "-58.5",
-        referencia_orden: s.referencia_orden ?? "1",
-        radio: s.radio ?? "",
-        andenes_habilitados: s.andenes_habilitados ?? "2",
-        visibilidad: s.visibilidad ?? { totem: 1, app_mobile: 1 },
-        incluida_en_ramales: s.incluida_en_ramales ?? [9],
-        operativa_en_ramales: s.operativa_en_ramales ?? [9],
-    }));
-}
-
-/**
- * Helper to create mock SOFSE arrivals response
- */
-function createMockSOFSEArribos(): SOFSEArribosResponse {
+function createMockSOFSEArribosWithResults(results: SOFSEArribosResponse["results"]): SOFSEArribosResponse {
     return {
         timestamp: Math.floor(Date.now() / 1000),
-        results: [],
-        total: 0,
+        results,
+        total: results.length,
     };
 }
 
@@ -157,13 +133,10 @@ describe("BAClient", () => {
                 ]),
             ]);
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
+            // Filter by subte line to avoid SOFSE calls
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
-            const arrivals = await client.getArrivals({ station: "Plaza" });
+            const arrivals = await client.getArrivals({ station: "Plaza", line: "A" });
 
             expect(arrivals).toHaveLength(1);
             expect(arrivals[0]).toMatchObject({
@@ -219,14 +192,11 @@ describe("BAClient", () => {
                 )
             );
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
             const arrivals = await client.getArrivals({
                 station: "Test",
+                line: "A",
                 limit: 3,
             });
 
@@ -373,17 +343,93 @@ describe("BAClient", () => {
         it("should include client_id and client_secret in requests", async () => {
             const mockSubteResponse = createMockSubteForecast([]);
 
-            mockFetch
-                .mockResolvedValueOnce(mockJsonResponse(mockSubteResponse))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEStations([])))
-                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEArribos()));
+            mockFetch.mockResolvedValueOnce(mockJsonResponse(mockSubteResponse));
 
-            await client.getArrivals({ station: "test" });
+            await client.getArrivals({ station: "test", line: "A" });
 
             const calledUrl = mockFetch.mock.calls[0]?.[0] as string;
             expect(calledUrl).toContain("client_id=test_client_id");
             expect(calledUrl).toContain("client_secret=test_client_secret");
+        });
+    });
+
+    describe("getTrainArrivals", () => {
+        it("should map SOFSE ramal_id to train line via live index", async () => {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, "0");
+            const mm = String((now.getMinutes() + 5) % 60).padStart(2, "0");
+            const arrivalTime = `${hh}:${mm}:00`;
+
+            const mockRamales = [
+                {
+                    id: 9,
+                    id_estacion_inicial: 1,
+                    id_estacion_final: 2,
+                    id_gerencia: 5,
+                    nombre: "Retiro - Tigre",
+                    estaciones: 10,
+                    operativo: 1,
+                    es_electrico: 1,
+                    tipo_id: 1,
+                    puntualidad_tolerancia: 0,
+                    siglas: "MIT",
+                    publico: true,
+                    orden_ramal: 1,
+                    mostrar_en_panel_cumplimiento: true,
+                    cabecera_inicial: {
+                        id: 1,
+                        nombre: "Retiro",
+                        siglas: "RET",
+                        nombre_corto: "Retiro",
+                        visibilidad: "1",
+                    },
+                    cabecera_final: {
+                        id: 2,
+                        nombre: "Tigre",
+                        siglas: "TIG",
+                        nombre_corto: "Tigre",
+                        visibilidad: "1",
+                    },
+                    alerta: [],
+                },
+            ];
+
+            const mockArribos = createMockSOFSEArribosWithResults([
+                {
+                    id: 1,
+                    ramal_id: 9,
+                    ramal_nombre: "Retiro - Tigre",
+                    cabecera: "Retiro",
+                    destino: "Tigre",
+                    estacion_id: 100,
+                    estacion_nombre: "Retiro",
+                    anden: "1",
+                    hora_llegada: arrivalTime,
+                    hora_salida: arrivalTime,
+                    tiempo_estimado: 300,
+                    estado: "EN HORARIO",
+                    tren_id: "T123",
+                    formacion_id: null,
+                    en_viaje: true,
+                },
+            ]);
+
+            mockFetch
+                // SOFSE auth
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEToken()))
+                // getGerencias (Mitre only)
+                .mockResolvedValueOnce(mockJsonResponse(createMockSOFSEGerencias([{ id: 5, nombre: "Mitre" }])))
+                // getRamales (Mitre)
+                .mockResolvedValueOnce(mockJsonResponse(mockRamales))
+                // getArrivals
+                .mockResolvedValueOnce(mockJsonResponse(mockArribos));
+
+            const arrivals = await client.getTrainArrivals({ stationId: 100, line: "Mitre" });
+
+            expect(arrivals).toHaveLength(1);
+            expect(arrivals[0]?.station.line).toBe("Mitre");
+            expect(arrivals[0]?.ramalId).toBe(9);
+            expect(arrivals[0]?.ramalName).toBe("Retiro - Tigre");
         });
     });
 });

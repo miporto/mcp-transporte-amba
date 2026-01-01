@@ -64,6 +64,10 @@ export default {
                     version: "0.1.0",
                     mcp_endpoint: "/mcp",
                     tools: [
+                        "list_train_lines",
+                        "list_train_ramales",
+                        "list_train_stations",
+                        "search_train_stations",
                         "get_subte_arrivals",
                         "get_train_arrivals",
                         "get_subte_status",
